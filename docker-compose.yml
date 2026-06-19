@@ -1,6 +1,10 @@
 services:
   odysseus:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - INSTALL_OPTIONAL=true
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
     volumes:
