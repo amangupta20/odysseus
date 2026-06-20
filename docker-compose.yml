@@ -7,7 +7,7 @@ services:
         - INSTALL_OPTIONAL=true
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
-volumes:
+    volumes:
       - odysseus-data:/app/data:z
       - odysseus-logs:/app/logs:z
       - odysseus-ssh:/app/.ssh:z
