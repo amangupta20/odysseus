@@ -155,15 +155,16 @@ def is_public_blocked_tool(tool_name: Optional[str]) -> bool:
     """Return True when a non-admin/public user must not execute this tool.
 
     This is a security gate, so it fails CLOSED: a malformed non-string tool
-    name can't be matched against the blocklist or the ``mcp__`` namespace, so
-    it is treated as blocked rather than silently allowed through. ``None`` /
-    empty string means there is no tool to gate.
+    name can't be matched against the blocklist, so it is treated as blocked
+    rather than silently allowed through. ``None`` / empty string means there
+    is no tool to gate.
     """
     if tool_name is None or tool_name == "":
         return False
     if not isinstance(tool_name, str):
         return True
-    return tool_name in NON_ADMIN_BLOCKED_TOOLS or tool_name.startswith("mcp__")
+    return tool_name in NON_ADMIN_BLOCKED_TOOLS
+
 
 
 def owner_is_admin_or_single_user(owner: Optional[str]) -> bool:

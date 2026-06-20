@@ -1875,9 +1875,6 @@ async def stream_agent_loop(
     public_blocked_tools = blocked_tools_for_owner(owner)
     if public_blocked_tools:
         disabled_tools.update(public_blocked_tools)
-        # MCP tools are namespaced dynamically, so hide all MCP schemas for
-        # public/non-admin users rather than trying to enumerate every tool.
-        mcp_mgr = None
 
     if plan_mode:
         # Plan mode: investigate read-only, propose a plan, don't execute. The
