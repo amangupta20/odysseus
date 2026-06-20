@@ -106,6 +106,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
         else:
             response.headers["X-Frame-Options"] = "DENY"
+            onlyoffice_url = os.getenv("ONLYOFFICE_URL")
+            oo_csp = f" {onlyoffice_url.rstrip('/')}" if onlyoffice_url else ""
             # NOTE: `style-src 'unsafe-inline'` is intentionally retained.
             # `static/index.html` and `static/login.html` ship inline <style>
             # blocks, and several JS modules build runtime `style=""` attrs.
@@ -114,13 +116,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # don't execute script, the residual risk is visual-only.
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net{oo_csp}; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "font-src 'self' https://cdn.jsdelivr.net; "
                 "img-src 'self' data: blob:; "
                 "media-src 'self' blob:; "
                 "connect-src 'self'; "
-                "frame-src 'self'; "
+                f"frame-src 'self'{oo_csp}; "
                 "frame-ancestors 'none'"
             )
         return response
