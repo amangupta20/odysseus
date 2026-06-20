@@ -1120,6 +1120,70 @@ import * as Modals from './modalManager.js';
     return text || res.statusText || `HTTP ${res.status}`;
   }
 
+  let _currentOnlyOfficeEditor = null;
+  const _loadedScripts = new Set();
+
+  function _loadOnlyOfficeScript(url) {
+    if (_loadedScripts.has(url)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = url;
+      script.onload = () => {
+        _loadedScripts.add(url);
+        resolve();
+      };
+      script.onerror = () => {
+        reject(new Error('Failed to load OnlyOffice JS API from ' + url));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function _renderOnlyOfficePane() {
+    const pane = document.getElementById('doc-onlyoffice-view');
+    if (!pane || !activeDocId) return;
+    pane.innerHTML = '<div style="color:#bbb;font-size:13px;text-align:center;padding:40px;">Loading Document Editor…</div>';
+    
+    if (_currentOnlyOfficeEditor) {
+      try {
+        _currentOnlyOfficeEditor.destroyEditor();
+      } catch (e) {
+        console.warn('Destroying OnlyOffice editor failed:', e);
+      }
+      _currentOnlyOfficeEditor = null;
+    }
+    
+    const docId = activeDocId;
+    try {
+      const res = await fetch(`${API_BASE}/api/document/${docId}/onlyoffice-config`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const config = await res.json();
+      
+      if (docId !== activeDocId) return;
+      if (!config.api_js_url) {
+        throw new Error('OnlyOffice Document Server integration is not configured. Please set ONLYOFFICE_URL in your .env file.');
+      }
+      
+      await _loadOnlyOfficeScript(config.api_js_url);
+      if (docId !== activeDocId) return;
+      
+      pane.innerHTML = '';
+      const editorDiv = document.createElement('div');
+      editorDiv.id = 'onlyoffice-editor-iframe-container';
+      editorDiv.style.cssText = 'width:100%;height:100%;';
+      pane.appendChild(editorDiv);
+      
+      if (window.DocsAPI && window.DocsAPI.DocEditor) {
+        _currentOnlyOfficeEditor = new window.DocsAPI.DocEditor('onlyoffice-editor-iframe-container', config);
+      } else {
+        throw new Error('Failed to load OnlyOffice DocsAPI script.');
+      }
+    } catch (e) {
+      if (docId !== activeDocId) return;
+      pane.innerHTML = `<div style="color:#fbb;padding:40px;text-align:center;">Failed to load Document editor: ${e.message || String(e)}</div>`;
+    }
+  }
+
   async function _renderPdfPane() {
     const pane = document.getElementById('doc-pdf-view');
     if (!pane || !activeDocId) return;
@@ -2055,16 +2119,33 @@ import * as Modals from './modalManager.js';
     if (true) {
       const explicit = _pdfViewState.get(activeDocId);
       const active = isForm && explicit !== false;
+      const ooPane = document.getElementById('doc-onlyoffice-view');
+      const isOnlyOffice = /<!--\s*onlyoffice_source\s+upload_id="[^"]+"/.test(live);
+
       // Sync the language select's displayed value to the current view.
       if (isForm && langSelect) {
         const want = active ? 'pdf' : 'markdown';
         if (langSelect.value !== want) langSelect.value = want;
       }
+
+      // Hide OnlyOffice pane if not active
+      if (ooPane && !isOnlyOffice && ooPane.style.display !== 'none') {
+        ooPane.style.display = 'none';
+        ooPane.innerHTML = '';
+        if (_currentOnlyOfficeEditor) {
+          try { _currentOnlyOfficeEditor.destroyEditor(); } catch(_) {}
+          _currentOnlyOfficeEditor = null;
+        }
+        const wrap = document.getElementById('doc-editor-wrap');
+        if (wrap) wrap.style.display = '';
+      }
+
       if (pdfPane) {
         if (active) {
           if (pdfPane.style.display === 'none') {
             const wrap = document.getElementById('doc-editor-wrap');
             if (wrap) wrap.style.display = 'none';
+            if (ooPane) ooPane.style.display = 'none';
             pdfPane.style.display = '';
             _renderPdfPane();
           }
@@ -2074,6 +2155,19 @@ import * as Modals from './modalManager.js';
           const wrap = document.getElementById('doc-editor-wrap');
           if (wrap) wrap.style.display = '';
         }
+      }
+
+      // Handle OnlyOffice rendering
+      if (ooPane && isOnlyOffice) {
+        if (ooPane.style.display === 'none') {
+          const wrap = document.getElementById('doc-editor-wrap');
+          if (wrap) wrap.style.display = 'none';
+          if (pdfPane) pdfPane.style.display = 'none';
+          ooPane.style.display = '';
+          _renderOnlyOfficePane();
+        }
+        const mt = document.getElementById('doc-md-toolbar');
+        if (mt) mt.style.display = 'none';
       }
     }
     if (!actionBtn) return;
@@ -4057,6 +4151,7 @@ import * as Modals from './modalManager.js';
       <div id="doc-pdf-view" style="display:none;width:100%;flex:1;min-height:0;overflow:auto;background:#525659;padding:20px 0;position:relative;">
         <div id="doc-pdf-save-pill" style="display:none;position:absolute;top:8px;right:14px;padding:4px 10px;border-radius:12px;font-size:11px;z-index:5;pointer-events:none;background:transparent;color:transparent;"></div>
       </div>
+      <div id="doc-onlyoffice-view" style="display:none;width:100%;flex:1;min-height:0;position:relative;"></div>
       <!-- Action footer sits AFTER all the content/preview panes so it stays
            pinned to the bottom no matter which pane (editor / md-preview /
            csv / html / pdf) is the one growing to fill. -->
@@ -5887,6 +5982,10 @@ import * as Modals from './modalManager.js';
       // re-added it, and the fresh pane drops into the desktop split layout
       // (renders as a narrow "sidebar" on mobile).
       if (isOpen) { if (pane) pane.remove(); if (divider) divider.remove(); return; }
+      if (_currentOnlyOfficeEditor) {
+        try { _currentOnlyOfficeEditor.destroyEditor(); } catch(_) {}
+        _currentOnlyOfficeEditor = null;
+      }
       document.body.classList.remove('doc-view');
       const container = document.getElementById('chat-container');
       if (container) container.style.display = '';
@@ -8374,6 +8473,7 @@ import * as Modals from './modalManager.js';
       const baseTitle = dotIdx > 0 ? name.slice(0, dotIdx) : name;
       const isSpreadsheet = ['.xlsx','.xls','.ods'].includes(ext);
       const isPdf = ext === '.pdf';
+      const isOffice = ['.docx', '.doc', '.pptx', '.ppt', '.epub'].includes(ext);
       // Spreadsheets need the library's per-sheet split — defer to it.
       if (isSpreadsheet) {
         openLibrary();
@@ -8389,6 +8489,15 @@ import * as Modals from './modalManager.js';
           if (sid) fd.append('session_id', sid);
           const r = await fetch(`${API_BASE}/api/documents/import-pdf`, { method: 'POST', body: fd, credentials: 'same-origin' });
           if (!r.ok) throw new Error('PDF import failed');
+          const j = await r.json();
+          docId = j.doc_id || j.id;
+        } else if (isOffice) {
+          const fd = new FormData();
+          fd.append('file', file);
+          const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
+          if (sid) fd.append('session_id', sid);
+          const r = await fetch(`${API_BASE}/api/documents/import-office`, { method: 'POST', body: fd, credentials: 'same-origin' });
+          if (!r.ok) throw new Error('Office document import failed');
           const j = await r.json();
           docId = j.doc_id || j.id;
         } else {

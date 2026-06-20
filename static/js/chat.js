@@ -4906,9 +4906,10 @@ import { wireArrowUpRecall, getLastUserMessageFromChatHistory } from './composer
     }
 
     const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(name);
+    const isOffice = /\.(docx?|pptx?|xlsx?|epub)$/i.test(name) || (mime && mime.startsWith('application/vnd.openxmlformats-officedocument'));
     const TEXT_EXT = /\.(txt|md|markdown|js|ts|jsx|tsx|py|rb|go|rs|java|c|cpp|h|hpp|cs|php|html?|css|scss|sass|less|json|ya?ml|toml|ini|conf|env|sh|bash|sql|csv|tsv|xml|log|vue|svelte)$/i;
     const isTextDoc = TEXT_EXT.test(name) || /^text\//.test(mime);
-    if (!isPdf && !isTextDoc) { window.open(url, '_blank'); return; }  // binary/unknown → raw
+    if (!isPdf && !isOffice && !isTextDoc) { window.open(url, '_blank'); return; }  // binary/unknown → raw
 
     // Reuse the doc we already imported for this upload, if it still loads.
     const cached = _attachDocCache.get(id);
@@ -4943,6 +4944,15 @@ import { wireArrowUpRecall, getLastUserMessageFromChatHistory } from './composer
         if (sid) fd.append('session_id', sid);
         const res = await fetch(`${API_BASE}/api/documents/import-pdf`, { method: 'POST', body: fd, credentials: 'same-origin' });
         if (!res.ok) throw new Error('import-pdf ' + res.status);
+        doc = await res.json();
+      } else if (isOffice) {
+        // import-office wants a fresh file upload — re-fetch the stored blob and post it.
+        const blob = await (await fetch(url)).blob();
+        const fd = new FormData();
+        fd.append('file', blob, name);
+        if (sid) fd.append('session_id', sid);
+        const res = await fetch(`${API_BASE}/api/documents/import-office`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        if (!res.ok) throw new Error('import-office ' + res.status);
         doc = await res.json();
       } else {
         const text = await (await fetch(url)).text();

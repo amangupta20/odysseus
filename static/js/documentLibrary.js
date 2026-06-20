@@ -1505,6 +1505,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
         const isSpreadsheet = ['.xlsx', '.xls', '.ods'].includes(ext);
         const isPdf = ext === '.pdf';
+        const isOffice = ['.docx', '.doc', '.pptx', '.ppt', '.epub'].includes(ext);
 
         if (isPdf) {
           // Backend handles save + AcroForm detection in one shot — picks the
@@ -1520,6 +1521,22 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             let _e = `HTTP ${res.status}`;
             try { const _j = await res.json(); _e = _j.detail || _j.error || _e; } catch {}
             throw new Error('PDF import failed: ' + _e);
+          }
+          imported++;
+          continue;
+        }
+
+        if (isOffice) {
+          const fd = new FormData();
+          fd.append('file', file);
+          const res = await fetch(`${API_BASE}/api/documents/import-office`, {
+            method: 'POST',
+            body: fd,
+          });
+          if (!res.ok) {
+            let _e = `HTTP ${res.status}`;
+            try { const _j = await res.json(); _e = _j.detail || _j.error || _e; } catch {}
+            throw new Error('Office import failed: ' + _e);
           }
           imported++;
           continue;

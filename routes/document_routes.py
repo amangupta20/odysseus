@@ -48,9 +48,17 @@ def _library_language_for_document(doc: Document) -> str:
     identify them as PDFs instead of exposing that internal wrapper format.
     """
     from src.pdf_form_doc import find_source_upload_id
+    from src.office_onlyoffice import find_office_source
+    import os
 
     if find_source_upload_id(doc.current_content or ""):
         return "pdf"
+    
+    office_source = find_office_source(doc.current_content or "")
+    if office_source:
+        _, ext = os.path.splitext(office_source[1].lower())
+        return ext.lstrip(".")
+        
     return doc.language or "text"
 
 
@@ -258,6 +266,318 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             return _doc_to_dict(doc)
         finally:
             db.close()
+
+    # ---- POST /api/documents/import-office ----
+    @router.post("/api/documents/import-office")
+    async def import_office(
+        request: Request,
+        file: UploadFile = File(...),
+        session_id: Optional[str] = Form(None),
+    ) -> Dict[str, Any]:
+        """Upload a DOCX/PPTX and create a matching Document with OnlyOffice integration."""
+        from src.markitdown_runtime import convert_to_markdown
+        from src.auth_helpers import require_privilege
+        import os
+
+        user = require_privilege(request, "can_use_documents")
+
+        if upload_handler is None:
+            raise HTTPException(500, "Upload handler not configured")
+
+        client_ip = request.client.host if request.client else "unknown"
+        try:
+            meta = upload_handler.save_upload(file, client_ip, owner=user)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Office import save_upload failed: {e}")
+            raise HTTPException(500, f"Upload failed: {e}")
+
+        upload_id = meta["id"]
+        office_path = _locate_current_user_upload(request, upload_id, user)
+        if not office_path:
+            raise HTTPException(500, "Saved office document could not be located")
+
+        filename = meta.get("original_name") or meta.get("name") or upload_id
+        title = os.path.splitext(filename)[0]
+
+        # Extract markdown text
+        try:
+            markdown = convert_to_markdown(office_path)
+        except Exception as e:
+            logger.warning("convert_to_markdown failed for %s: %s", office_path, e)
+            markdown = None
+
+        # Prepend OnlyOffice front-matter marker
+        marker = f'<!-- onlyoffice_source upload_id="{upload_id}" filename="{filename}" -->\n'
+        content = marker + (markdown or "")
+
+        db = SessionLocal()
+        try:
+            doc_id = str(uuid.uuid4())
+            ver_id = str(uuid.uuid4())
+            
+            # Lookup session if session_id is provided
+            sess = None
+            if session_id:
+                sess = db.query(DbSession).filter(DbSession.id == session_id).first()
+
+            doc = Document(
+                id=doc_id,
+                session_id=session_id,
+                title=title,
+                language="markdown",
+                current_content=content,
+                version_count=1,
+                is_active=True,
+                owner=sess.owner if sess else user,
+            )
+            ver = DocumentVersion(
+                id=ver_id,
+                document_id=doc_id,
+                version_number=1,
+                content=content,
+                summary="Imported from Office file",
+                source="upload",
+            )
+            db.add(doc)
+            db.add(ver)
+            db.commit()
+            db.refresh(doc)
+            
+            # Set active document if session is present
+            if session_id:
+                from src.agent_tools.document_tools import set_active_document
+                set_active_document(doc_id)
+
+            return _doc_to_dict(doc)
+        except Exception as e:
+            db.rollback()
+            logger.error("Failed to create office document: %s", e)
+            raise HTTPException(500, f"Failed to create office document: {e}")
+        finally:
+            db.close()
+
+    # ---- GET /api/document/{doc_id}/onlyoffice-config ----
+    @router.get("/api/document/{doc_id}/onlyoffice-config")
+    async def get_onlyoffice_config(doc_id: str, request: Request) -> Dict[str, Any]:
+        """Return configuration object for loading OnlyOffice iframe editor."""
+        from src.office_onlyoffice import is_onlyoffice_enabled, build_onlyoffice_config, find_office_source, get_onlyoffice_url
+        import os
+
+        user = get_current_user(request)
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                raise HTTPException(404, "Document not found")
+            _verify_doc_owner(db, doc, user)
+
+            source = find_office_source(doc.current_content or "")
+            if not source:
+                raise HTTPException(400, "Document is not linked to an OnlyOffice source")
+            
+            upload_id, filename = source
+            
+            # Construct download/callback base URL
+            api_base = os.getenv("ODYSSEUS_API_BASE") or str(request.base_url).rstrip("/")
+            
+            # Generate a secure JWT signed token
+            from src.office_onlyoffice import sign_payload
+            token_payload = {
+                "doc_id": doc_id,
+                "upload_id": upload_id,
+                "filename": filename,
+                "user_id": user if isinstance(user, str) else (user.id if user else "guest")
+            }
+            token = sign_payload(token_payload)
+            
+            download_url = f"{api_base}/api/document/{doc_id}/onlyoffice-download?token={token}"
+            callback_url = f"{api_base}/api/document/{doc_id}/onlyoffice-callback?token={token}"
+            
+            user_id = user if isinstance(user, str) else (user.id if user else "guest")
+            user_name = user if isinstance(user, str) else (user.username if user else "Guest User")
+            
+            version_key = f"{doc_id}_{doc.version_count or 1}"
+            
+            config = build_onlyoffice_config(
+                doc_id=doc_id,
+                filename=filename,
+                download_url=download_url,
+                callback_url=callback_url,
+                user_id=user_id,
+                user_name=user_name,
+                version_key=version_key,
+                can_edit=True
+            )
+            
+            # Append public OnlyOffice JS API URL
+            oo_url = get_onlyoffice_url()
+            config["api_js_url"] = f"{oo_url}/web-apps/apps/api/documents/api.js" if oo_url else ""
+            
+            return config
+        finally:
+            db.close()
+
+    # ---- GET /api/document/{doc_id}/onlyoffice-download ----
+    @router.get("/api/document/{doc_id}/onlyoffice-download")
+    async def onlyoffice_download(doc_id: str, token: str, request: Request) -> FileResponse:
+        """Secure download endpoint for OnlyOffice Document Server to fetch document content."""
+        from src.office_onlyoffice import decode_token, find_office_source
+        from fastapi.responses import FileResponse
+
+        payload = decode_token(token)
+        if not payload or payload.get("doc_id") != doc_id:
+            raise HTTPException(403, "Invalid download token")
+
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                raise HTTPException(404, "Document not found")
+            
+            source = find_office_source(doc.current_content or "")
+            if not source:
+                raise HTTPException(400, "Document is not linked to an OnlyOffice source")
+            
+            upload_id, filename = source
+            owner = doc.owner
+        finally:
+            db.close()
+
+        office_path = _locate_current_user_upload(request, upload_id, owner)
+        if not office_path:
+            raise HTTPException(404, "Document binary not found")
+
+        # Determine media type based on filename extension
+        import mimetypes
+        media_type, _ = mimetypes.guess_type(filename)
+        if not media_type:
+            media_type = "application/octet-stream"
+
+        return FileResponse(
+            path=office_path,
+            filename=filename,
+            media_type=media_type
+        )
+
+    # ---- POST /api/document/{doc_id}/onlyoffice-callback ----
+    @router.post("/api/document/{doc_id}/onlyoffice-callback")
+    async def onlyoffice_callback(doc_id: str, request: Request) -> Dict[str, Any]:
+        """Callback endpoint for OnlyOffice Document Server to post document status changes."""
+        from src.office_onlyoffice import decode_token, find_office_source
+        from src.markitdown_runtime import convert_to_markdown
+        import httpx
+
+        # Validate callback token (either from query string or body token or auth header)
+        token = request.query_params.get("token")
+        
+        # Read body json
+        body = await request.json()
+        status = body.get("status")
+        
+        # OnlyOffice tokens can also be embedded in body or auth header if secret is configured
+        if not token:
+            token = body.get("token")
+        if not token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+
+        if token:
+            payload = decode_token(token)
+            if not payload or payload.get("doc_id") != doc_id:
+                logger.warning("OnlyOffice callback token validation failed for doc %s", doc_id)
+                raise HTTPException(403, "Invalid callback token")
+
+        # Status 2 = Document is ready for saving
+        # Status 6 = Document is force-saved (e.g. periodically or manually)
+        if status in [2, 6]:
+            download_url = body.get("url")
+            if not download_url:
+                logger.warning("OnlyOffice callback missing download url")
+                return {"error": 1}
+
+            db = SessionLocal()
+            try:
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc:
+                    return {"error": 1}
+                
+                source = find_office_source(doc.current_content or "")
+                if not source:
+                    return {"error": 1}
+                
+                upload_id, filename = source
+                owner = doc.owner
+            finally:
+                db.close()
+
+            office_path = _locate_current_user_upload(request, upload_id, owner)
+            if not office_path:
+                logger.warning("Could not resolve upload path for callback doc %s", doc_id)
+                return {"error": 1}
+
+            # Download edited document from OnlyOffice
+            try:
+                async with httpx.AsyncClient() as client:
+                    res = await client.get(download_url, timeout=30.0)
+                    if res.status_code != 200:
+                        logger.error("Failed to download edited file from OnlyOffice: HTTP %s", res.status_code)
+                        return {"error": 1}
+                    file_bytes = res.content
+            except Exception as e:
+                logger.error("Exception during OnlyOffice download: %s", e)
+                return {"error": 1}
+
+            # Write the edited bytes back to disk (overwrite the upload path)
+            try:
+                with open(office_path, "wb") as f:
+                    f.write(file_bytes)
+            except Exception as e:
+                logger.error("Failed to write OnlyOffice file changes to %s: %s", office_path, e)
+                return {"error": 1}
+
+            # Re-run markitdown parser to extract the updated text
+            try:
+                markdown = convert_to_markdown(office_path)
+            except Exception as e:
+                logger.warning("convert_to_markdown failed on callback save: %s", e)
+                markdown = None
+
+            marker = f'<!-- onlyoffice_source upload_id="{upload_id}" filename="{filename}" -->\n'
+            new_content = marker + (markdown or "")
+
+            db = SessionLocal()
+            try:
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc:
+                    return {"error": 1}
+
+                # Update document text content and create new version
+                new_ver = doc.version_count + 1
+                ver = DocumentVersion(
+                    id=str(uuid.uuid4()),
+                    document_id=doc_id,
+                    version_number=new_ver,
+                    content=new_content,
+                    summary="Edited via OnlyOffice",
+                    source="user",
+                )
+                doc.version_count = new_ver
+                doc.current_content = new_content
+                db.add(ver)
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error("Failed to save OnlyOffice document callback update: %s", e)
+                return {"error": 1}
+            finally:
+                db.close()
+
+        # OnlyOffice expects {"error": 0} on success
+        return {"error": 0}
+
 
     # ---- GET /api/documents/library ----
     @router.get("/api/documents/library")
