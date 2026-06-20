@@ -160,7 +160,7 @@ services:
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-}
       - JWT_HEADER=Authorization
     ports:
-      - "${ONLYOFFICE_PORT_BIND:-127.0.0.1:8080}:80"
+      - "${ONLYOFFICE_PORT_BIND:-127.0.0.1:8083}:80"
 
 volumes:
   searxng-data:
