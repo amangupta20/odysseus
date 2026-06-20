@@ -225,6 +225,11 @@ if AUTH_ENABLED:
     import re as _re
     AUTH_EXEMPT_PATTERNS = [
         _re.compile(r"^/api/tasks/[^/]+/webhook/[^/]+/?$"),
+        # OnlyOffice Document Server calls these endpoints server-to-server
+        # (no session cookie). They authenticate via a signed JWT token
+        # parameter instead.
+        _re.compile(r"^/api/document/[^/]+/onlyoffice-download"),
+        _re.compile(r"^/api/document/[^/]+/onlyoffice-callback"),
     ]
 
     def _is_auth_exempt(path: str) -> bool:

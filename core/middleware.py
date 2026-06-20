@@ -117,11 +117,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net{oo_csp}; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                "font-src 'self' https://cdn.jsdelivr.net; "
-                "img-src 'self' data: blob:; "
+                f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net{oo_csp}; "
+                f"font-src 'self' https://cdn.jsdelivr.net{oo_csp}; "
+                f"img-src 'self' data: blob:{oo_csp}; "
                 "media-src 'self' blob:; "
-                "connect-src 'self'; "
+                f"connect-src 'self'{oo_csp}; "
                 f"frame-src 'self'{oo_csp}; "
                 "frame-ancestors 'none'"
             )
