@@ -193,6 +193,8 @@ function _initModelPickerDropdown() {
       const probeResult = item.endpoint_id ? _localProbe[item.endpoint_id] : null;
       const isLocalDead = !!(probeResult && probeResult.alive === false);
       allModels.forEach((mid, i) => {
+        // Exclude dedicated image generation models from the chat model picker
+        if (typeof mid === 'string' && /(dall-e|gpt-image|chatgpt-image|midjourney|sdxl|flux|stable-diffusion|gemini.*-image)/i.test(mid)) return;
         // Deduplicate by model ID — prefer ONLINE endpoint entries over
         // offline duplicates so the user gets a working endpoint first
         // when the same model is exposed by both.
