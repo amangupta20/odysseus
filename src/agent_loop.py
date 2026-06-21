@@ -3086,6 +3086,9 @@ async def stream_agent_loop(
                 "output": output_text,
                 "exit_code": result.get("exit_code"),
             }
+            if result.get("images"):
+                img = result["images"][0]
+                tool_event["screenshot"] = f"data:{img['mimeType']};base64,{img['data']}"
             if result.get("image_url"):
                 for ik in ("image_url", "image_prompt", "image_model", "image_size", "image_quality"):
                     if result.get(ik):
