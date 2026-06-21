@@ -148,11 +148,19 @@ def _reject_raw_endpoint_url_for_non_admin(
         return
     if not endpoint_url:
         return
-    # Raw URLs make the server dial whatever host the request supplies. For
-    # non-admin users, require a saved endpoint row so normal owner scoping and
-    # endpoint validation have already happened.
     if user and not _current_user_is_admin(request, user):
-        raise HTTPException(403, "Choose a registered model endpoint")
+        from core.database import SessionLocal, ModelEndpoint
+        from src.auth_helpers import owner_filter
+        from src.endpoint_resolver import normalize_base, build_chat_url
+        db = SessionLocal()
+        try:
+            q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+            q = owner_filter(q, ModelEndpoint, user, include_shared=True)
+            valid_urls = {build_chat_url(normalize_base(e.base_url or "")) for e in q.all()}
+            if endpoint_url not in valid_urls:
+                raise HTTPException(403, "Choose a registered model endpoint")
+        finally:
+            db.close()
 
 
 def _persist_session_headers(session_id: str, headers: dict | None) -> None:
@@ -332,12 +340,12 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         endpoint_api_key = ""
         endpoint_base_url = ""
         _reject_raw_endpoint_url_for_non_admin(request, user, endpoint_id, endpoint_url)
-        if endpoint_id and endpoint_id.strip():
-            from core.database import ModelEndpoint
-            from src.auth_helpers import owner_filter
-            from src.endpoint_resolver import build_chat_url, normalize_base
-            _db = SessionLocal()
-            try:
+        from core.database import ModelEndpoint
+        from src.auth_helpers import owner_filter
+        from src.endpoint_resolver import build_chat_url, normalize_base
+        _db = SessionLocal()
+        try:
+            if endpoint_id and endpoint_id.strip():
                 q = _db.query(ModelEndpoint).filter(
                     ModelEndpoint.id == endpoint_id.strip(),
                     ModelEndpoint.is_enabled == True,
@@ -350,8 +358,22 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 endpoint_base_url = endpoint_row.base_url or ""
                 endpoint_api_key = endpoint_row.api_key or ""
                 endpoint_url = build_chat_url(normalize_base(endpoint_base_url))
-            finally:
-                _db.close()
+            elif endpoint_url:
+                # Reverse lookup by URL if endpoint_id is missing (e.g. UI fallback)
+                q = _db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+                if user:
+                    q = owner_filter(q, ModelEndpoint, user, include_shared=True)
+                target_url = endpoint_url.strip().lower()
+                for e in q.all():
+                    cand_url = build_chat_url(normalize_base(e.base_url or "")).lower()
+                    if cand_url == target_url:
+                        endpoint_base_url = e.base_url or ""
+                        endpoint_api_key = e.api_key or ""
+                        endpoint_url = cand_url
+                        endpoint_id = e.id  # Patch it so the rest of the flow knows it
+                        break
+        finally:
+            _db.close()
 
         if not endpoint_url and not skip_val:
             raise HTTPException(400, "endpoint_url is required (choose from /api/models)")
