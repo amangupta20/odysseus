@@ -400,6 +400,8 @@ async def _call_mcp_tool(
     tool: str,
     content: str,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    owner: str = "",
+    session_id: str = "",
 ) -> Dict:
     """Route a legacy tool call through the MCP manager, with direct fallbacks."""
     mcp = get_mcp_manager()
@@ -409,6 +411,12 @@ async def _call_mcp_tool(
     server_id, tool_name = _MCP_TOOL_MAP[tool]
     qualified = f"mcp__{server_id}__{tool_name}"
     args = _build_mcp_args(tool, content)
+    
+    if owner:
+        args["__mcp_user"] = owner
+    if session_id:
+        args["__mcp_session_id"] = session_id
+        
     result = await mcp.call_tool(qualified, args)
 
     # If MCP server not connected, try direct fallback
@@ -755,7 +763,7 @@ async def _execute_tool_block_impl(
     if tool in _MCP_TOOL_MAP:
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}"
-        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb)
+        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb, owner=owner, session_id=session_id)
     elif tool in ("grep", "glob", "ls", "get_workspace"):
         # Code-navigation tools — no MCP server; run the direct implementation.
         first_line = content.split(chr(10))[0][:80]

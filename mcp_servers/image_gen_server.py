@@ -157,6 +157,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     
                     try:
                         from src.database import SessionLocal, GalleryImage
+                        
+                        mcp_user = arguments.get("__mcp_user")
+                        mcp_session = arguments.get("__mcp_session_id")
+                        
                         db = SessionLocal()
                         db.add(GalleryImage(
                             id=str(uuid.uuid4()),
@@ -165,6 +169,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                             model=model_id,
                             size=size,
                             quality=payload.get("quality", "medium"),
+                            owner=mcp_user,
+                            session_id=mcp_session,
                         ))
                         db.commit()
                         db.close()
