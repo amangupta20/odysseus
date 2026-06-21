@@ -87,6 +87,9 @@ function _startChat(url, mid, endpointId) {
 }
 
 function _buildModelRow(mid, url, displayName, endpointId, offline, modelType) {
+  if (typeof mid === 'string' && /gemini.*-image/i.test(mid)) {
+    modelType = 'image';
+  }
   const row = document.createElement('div');
   row.className = 'models-row' + (offline ? ' models-row-offline' : '');
   row.setAttribute('data-model-id', mid);

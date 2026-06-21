@@ -9,7 +9,7 @@ var escapeHtml = uiModule.esc;
 // ── Model classification constants ──
 const NON_CHAT_PREFIXES = ['tts-', 'whisper-', 'text-embedding-', 'text-moderation-', 'moderation-', 'embedding'];
 const NON_CHAT_SUFFIXES = ['deep-research', '-online'];
-const IMAGE_PREFIXES = ['dall-e-3', 'gpt-image', 'chatgpt-image'];
+const IMAGE_PREFIXES = ['dall-e-3', 'gpt-image', 'chatgpt-image', 'gemini-*-image', 'google/gemini-*-image'];
 const DEPRECATED_IMAGE = ['dall-e-2'];
 
 function classifyModel(id) {

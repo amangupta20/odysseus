@@ -42,6 +42,7 @@ function modelCaps(modelId, endpointName, endpointType) {
   if (/dall-e-3/.test(id))    return { gen: true,  inpaint: false };
   if (/dall-e-2/.test(id))    return { gen: true,  inpaint: true  };
   if (/gpt-image/.test(id))   return { gen: true,  inpaint: true  };
+  if (/gemini.*-image/i.test(id)) return { gen: true,  inpaint: false };
   // Diffusion families — most generic SD/SDXL/Flux base models
   // support both via diffusers.
   if (/(?:^|[/\-_])(?:sd-?xl|sdxl|sd3|sd-|stable[\s-]*diffusion|flux|playground|pixart|kandinsky)/i.test(id)) {
