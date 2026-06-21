@@ -36,7 +36,7 @@ async function _checkUnprobed() {
   try {
   for (const m of unprobed) {
     try {
-      const _imageModelPrefixes = ['dall-e', 'gpt-image', 'chatgpt-image', 'stable-diffusion', 'sdxl', 'flux', 'midjourney'];
+      const _imageModelPrefixes = ['dall-e', 'gpt-image', 'chatgpt-image', 'stable-diffusion', 'sdxl', 'flux', 'midjourney', 'gemini-*-image', 'google/gemini-*-image'];
       if (_imageModelPrefixes.some(p => m.model.toLowerCase().includes(p))) {
         state._probed.add(m.model);
         ok++;

@@ -993,7 +993,7 @@ async function showModelSelector() {
       document.addEventListener('keydown', _probeEsc, false);
 
       // Helper: probe a single model (skip image models — they use a different API)
-      const _imageModelPrefixes = ['dall-e', 'gpt-image', 'chatgpt-image', 'stable-diffusion', 'sdxl', 'flux', 'midjourney'];
+      const _imageModelPrefixes = ['dall-e', 'gpt-image', 'chatgpt-image', 'stable-diffusion', 'sdxl', 'flux', 'midjourney', 'gemini-*-image', 'google/gemini-*-image'];
       function _isImageModel(modelId) {
         const lower = (modelId || '').toLowerCase();
         return _imageModelPrefixes.some(p => lower.includes(p));

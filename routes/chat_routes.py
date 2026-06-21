@@ -45,8 +45,7 @@ from src.tool_policy import build_effective_tool_policy
 logger = logging.getLogger(__name__)
 
 # Track active streams for partial-save safety net
-_active_streams: Dict[str, dict] = {}
-_IMAGE_MODEL_PREFIXES = ("gpt-image", "dall-e", "chatgpt-image")
+_IMAGE_MODEL_PREFIXES = ("gpt-image", "dall-e", "chatgpt-image", "gemini-", "google/gemini-")
 
 
 def _stream_set(session_id: str, **fields) -> None:
@@ -165,7 +164,10 @@ def _is_image_generation_session(sess, owner: str | None = None) -> bool:
     """
     model = (getattr(sess, "model", "") or "").strip()
     if any(model.lower().startswith(prefix) for prefix in _IMAGE_MODEL_PREFIXES):
-        return True
+        if "gemini" in model.lower() and "-image" not in model.lower():
+            pass # only gemini models with -image in the name are image generation models
+        else:
+            return True
 
     endpoint_url = (getattr(sess, "endpoint_url", "") or "").strip()
     if not endpoint_url:

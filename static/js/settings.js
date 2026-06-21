@@ -757,7 +757,8 @@ async function initImageSettings() {
       return lower.includes('inpaint')
         || lower.includes('3.5-medium')
         || lower.includes('3-5-medium')
-        || lower.includes('sd-3.5-med');
+        || lower.includes('sd-3.5-med')
+        || (lower.includes('gemini') && lower.includes('-image'));
     };
     const imageModels = [];
     (modelsData.items || []).forEach(item => {

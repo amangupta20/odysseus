@@ -84,19 +84,28 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         url, model_id, headers = _resolve_model(model_spec)
 
         is_gpt_image = "gpt-image" in model_id.lower()
+        is_gemini_image = "gemini" in model_id.lower() and "-image" in model_id.lower()
         base_url = url.replace("/chat/completions", "").replace("/v1/messages", "").rstrip("/")
-        images_url = base_url + "/images/generations"
+        
+        if is_gemini_image:
+            images_url = base_url + "/chat/completions"
+            payload = {
+                "model": model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "extra_body": {"modalities": ["image", "text"]}
+            }
+        else:
+            images_url = base_url + "/images/generations"
+            valid_gpt_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
+            valid_dalle3_sizes = {"1024x1024", "1024x1792", "1792x1024"}
+            if is_gpt_image and size not in valid_gpt_sizes:
+                size = "1024x1024"
+            elif not is_gpt_image and size not in valid_dalle3_sizes:
+                size = "1024x1024"
 
-        valid_gpt_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
-        valid_dalle3_sizes = {"1024x1024", "1024x1792", "1792x1024"}
-        if is_gpt_image and size not in valid_gpt_sizes:
-            size = "1024x1024"
-        elif not is_gpt_image and size not in valid_dalle3_sizes:
-            size = "1024x1024"
-
-        payload = {"model": model_id, "prompt": prompt, "n": 1, "size": size}
-        if is_gpt_image:
-            payload["quality"] = quality if quality in ("low", "medium", "high", "auto") else "medium"
+            payload = {"model": model_id, "prompt": prompt, "n": 1, "size": size}
+            if is_gpt_image:
+                payload["quality"] = quality if quality in ("low", "medium", "high", "auto") else "medium"
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)) as client:
             resp = await client.post(images_url, json=payload, headers=headers)
@@ -111,46 +120,80 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [TextContent(type="text", text=f"Error: Image generation failed ({resp.status_code}): {error_text}")]
 
             data = resp.json()
-            images = data.get("data", [])
-            if not images:
-                return [TextContent(type="text", text="Error: No images returned from API")]
-
-            img = images[0]
             image_url = None
-            # Prefix the instance's public base URL (existing app_public_url setting) so the
-            # link is fully-qualified and clickable when the model echoes it. Empty = relative
-            # same-origin path (unchanged default).
+            
             _pub_base = (get_setting("app_public_url", "") or "").rstrip("/")
 
-            if img.get("b64_json"):
-                img_dir = Path(GENERATED_IMAGES_DIR)
-                img_dir.mkdir(parents=True, exist_ok=True)
-                filename = f"{uuid.uuid4().hex[:12]}.png"
-                img_path = img_dir / filename
-                img_path.write_bytes(base64.b64decode(img["b64_json"]))
-                image_url = f"{_pub_base}/api/generated-image/{filename}"
-
-                # Save to gallery
-                try:
-                    from src.database import SessionLocal, GalleryImage
-                    db = SessionLocal()
-                    db.add(GalleryImage(
-                        id=str(uuid.uuid4()),
-                        filename=filename,
-                        prompt=prompt,
-                        model=model_id,
-                        size=size,
-                        quality=payload.get("quality", "medium"),
-                    ))
-                    db.commit()
-                    db.close()
-                except Exception:
-                    pass
-
-            elif img.get("url"):
-                image_url = img["url"]
+            if is_gemini_image:
+                choices = data.get("choices", [])
+                if not choices:
+                    return [TextContent(type="text", text="Error: No images returned from API")]
+                content = choices[0].get("message", {}).get("content", "")
+                
+                import re
+                data_url_match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
+                if data_url_match:
+                    b64_data = data_url_match.group(1)
+                    img_dir = Path(GENERATED_IMAGES_DIR)
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{uuid.uuid4().hex[:12]}.png"
+                    img_path = img_dir / filename
+                    img_path.write_bytes(base64.b64decode(b64_data))
+                    image_url = f"{_pub_base}/api/generated-image/{filename}"
+                    
+                    try:
+                        from src.database import SessionLocal, GalleryImage
+                        db = SessionLocal()
+                        db.add(GalleryImage(
+                            id=str(uuid.uuid4()),
+                            filename=filename,
+                            prompt=prompt,
+                            model=model_id,
+                            size=size,
+                            quality=payload.get("quality", "medium"),
+                        ))
+                        db.commit()
+                        db.close()
+                    except Exception:
+                        pass
+                else:
+                    return [TextContent(type="text", text="Error: No base64 image data found in response")]
             else:
-                return [TextContent(type="text", text="Error: Unexpected image API response format")]
+                images = data.get("data", [])
+                if not images:
+                    return [TextContent(type="text", text="Error: No images returned from API")]
+
+                img = images[0]
+
+                if img.get("b64_json"):
+                    img_dir = Path(GENERATED_IMAGES_DIR)
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{uuid.uuid4().hex[:12]}.png"
+                    img_path = img_dir / filename
+                    img_path.write_bytes(base64.b64decode(img["b64_json"]))
+                    image_url = f"{_pub_base}/api/generated-image/{filename}"
+
+                    # Save to gallery
+                    try:
+                        from src.database import SessionLocal, GalleryImage
+                        db = SessionLocal()
+                        db.add(GalleryImage(
+                            id=str(uuid.uuid4()),
+                            filename=filename,
+                            prompt=prompt,
+                            model=model_id,
+                            size=size,
+                            quality=payload.get("quality", "medium"),
+                        ))
+                        db.commit()
+                        db.close()
+                    except Exception:
+                        pass
+
+                elif img.get("url"):
+                    image_url = img["url"]
+                else:
+                    return [TextContent(type="text", text="Error: Unexpected image API response format")]
 
             # "Direct link:" rather than an "image_url:" label — small models copied the
             # label token ("image_url") into the link href, producing a broken link.

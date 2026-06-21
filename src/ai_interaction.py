@@ -965,11 +965,25 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
     # Detect if this is a GPT image model vs DALL-E vs local diffusion
     is_gpt_image = "gpt-image" in model_id.lower()
     is_dalle = "dall-e" in model_id.lower()
-    is_local_diffusion = not is_gpt_image and not is_dalle
+    is_gemini_image = "gemini" in model_id.lower() and "-image" in model_id.lower()
+    is_local_diffusion = not is_gpt_image and not is_dalle and not is_gemini_image
 
-    # Build the images endpoint URL from the chat completions URL
-    base_url = url.replace("/chat/completions", "").replace("/v1/messages", "").rstrip("/")
-    images_url = base_url + "/images/generations"
+    if is_gemini_image:
+        images_url = base_url + "/chat/completions"
+        payload = {
+            "model": model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "extra_body": {"modalities": ["image", "text"]}
+        }
+    else:
+        # Build the images endpoint URL from the chat completions URL
+        images_url = base_url + "/images/generations"
+        payload = {
+            "model": model_id,
+            "prompt": prompt,
+            "n": 1,
+            "size": size,
+        }
 
     # Validate size for cloud image models (local diffusion accepts any WxH)
     valid_gpt_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
@@ -979,19 +993,13 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
     elif is_dalle and size not in valid_dalle3_sizes:
         size = "1024x1024"
 
-    payload = {
-        "model": model_id,
-        "prompt": prompt,
-        "n": 1,
-        "size": size,
-    }
-
     # GPT image models and local diffusion support quality; DALL-E does not
-    if is_gpt_image or is_local_diffusion:
-        if quality in ("low", "medium", "high", "auto"):
-            payload["quality"] = quality
-        else:
-            payload["quality"] = "medium"
+    if not is_gemini_image:
+        if is_gpt_image or is_local_diffusion:
+            if quality in ("low", "medium", "high", "auto"):
+                payload["quality"] = quality
+            else:
+                payload["quality"] = "medium"
 
     logger.info(f"Image generation: model={model_id}, size={size}, quality={quality}, prompt={prompt[:80]}")
 
@@ -1010,14 +1018,7 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
                 return {"error": f"Image generation failed ({resp.status_code}): {error_text}"}
 
             data = resp.json()
-            images = data.get("data", [])
-            if not images:
-                return {"error": "No images returned from API"}
-
-            img = images[0]
-            image_url = None
-            image_id = None
-
+            
             def _save_to_gallery(filename: str) -> str:
                 """Insert a GalleryImage row and return the new id (or '')."""
                 try:
@@ -1041,42 +1042,76 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
                     logger.warning(f"Failed to save gallery record: {_ge}")
                     return ""
 
-            # GPT image models always return b64_json; DALL-E may return url
-            if img.get("b64_json"):
-                img_dir = Path(GENERATED_IMAGES_DIR)
-                img_dir.mkdir(parents=True, exist_ok=True)
-                filename = f"{uuid.uuid4().hex[:12]}.png"
-                img_path = img_dir / filename
-                img_path.write_bytes(base64.b64decode(img.get("b64_json")))
-                image_url = f"/api/generated-image/{filename}"
-                image_id = _save_to_gallery(filename)
+            image_url = None
+            image_id = None
 
-            elif img.get("url"):
-                # Download external URL and save locally (DALL-E returns temp URLs)
-                result_url = img["url"]
-                ok, reason = check_outbound_url(
-                    result_url,
-                    block_private=os.getenv("IMAGE_BLOCK_PRIVATE_IPS", "false").lower() == "true",
-                )
-                if not ok:
-                    return {"error": f"Image API returned unsafe image URL: {reason}"}
-                try:
-                    dl_resp = httpx.get(result_url, timeout=60)
-                    if dl_resp.status_code == 200:
-                        img_dir = Path(GENERATED_IMAGES_DIR)
-                        img_dir.mkdir(parents=True, exist_ok=True)
-                        filename = f"{uuid.uuid4().hex[:12]}.png"
-                        img_path = img_dir / filename
-                        img_path.write_bytes(dl_resp.content)
-                        image_url = f"/api/generated-image/{filename}"
-                        image_id = _save_to_gallery(filename)
-                    else:
-                        image_url = result_url  # fallback to external URL
-                except Exception as _dl_e:
-                    logger.warning(f"Failed to download DALL-E image: {_dl_e}")
-                    image_url = result_url  # fallback to external URL
+            if is_gemini_image:
+                choices = data.get("choices", [])
+                if not choices:
+                    return {"error": "No images returned from API (no choices in chat completions)"}
+                
+                content = choices[0].get("message", {}).get("content", "")
+                if not content:
+                    return {"error": "No images returned from API (no content in message)"}
+                
+                # Check for data URL in markdown or plain text
+                import re
+                data_url_match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
+                
+                if data_url_match:
+                    b64_data = data_url_match.group(1)
+                    img_dir = Path(GENERATED_IMAGES_DIR)
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{uuid.uuid4().hex[:12]}.png"
+                    img_path = img_dir / filename
+                    img_path.write_bytes(base64.b64decode(b64_data))
+                    image_url = f"/api/generated-image/{filename}"
+                    image_id = _save_to_gallery(filename)
+                else:
+                    return {"error": "No base64 image data found in chat completions response"}
             else:
-                return {"error": "Image API returned unexpected format (no b64_json or url)"}
+                images = data.get("data", [])
+                if not images:
+                    return {"error": "No images returned from API"}
+
+                img = images[0]
+
+                # GPT image models always return b64_json; DALL-E may return url
+                if img.get("b64_json"):
+                    img_dir = Path(GENERATED_IMAGES_DIR)
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{uuid.uuid4().hex[:12]}.png"
+                    img_path = img_dir / filename
+                    img_path.write_bytes(base64.b64decode(img.get("b64_json")))
+                    image_url = f"/api/generated-image/{filename}"
+                    image_id = _save_to_gallery(filename)
+
+                elif img.get("url"):
+                    # Download external URL and save locally (DALL-E returns temp URLs)
+                    result_url = img["url"]
+                    ok, reason = check_outbound_url(
+                        result_url,
+                        block_private=os.getenv("IMAGE_BLOCK_PRIVATE_IPS", "false").lower() == "true",
+                    )
+                    if not ok:
+                        return {"error": f"Image API returned unsafe image URL: {reason}"}
+                    try:
+                        dl_resp = httpx.get(result_url, timeout=60)
+                        if dl_resp.status_code == 200:
+                            img_dir = Path(GENERATED_IMAGES_DIR)
+                            img_dir.mkdir(parents=True, exist_ok=True)
+                            filename = f"{uuid.uuid4().hex[:12]}.png"
+                            img_path = img_dir / filename
+                            img_path.write_bytes(dl_resp.content)
+                            image_url = f"/api/generated-image/{filename}"
+                            image_id = _save_to_gallery(filename)
+                        else:
+                            image_url = result_url  # fallback to external URL
+                    except Exception as _dl_e:
+                        logger.warning(f"Failed to download DALL-E image: {_dl_e}")
+                        image_url = result_url  # fallback to external URL
+                else:
+                    return {"error": "Image API returned unexpected format (no b64_json or url)"}
 
             return {
                 "results": f"Generated image for: {prompt[:100]}",
