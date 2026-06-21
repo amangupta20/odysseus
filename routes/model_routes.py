@@ -2040,6 +2040,10 @@ def setup_model_routes(model_discovery):
             ep_id = (_user_prefs.get("default_endpoint_id") or "").strip()
             model = (_user_prefs.get("default_model") or "").strip()
             _fallbacks = _user_prefs.get("default_model_fallbacks") or []
+            if not ep_id:
+                ep_id = settings.get("default_endpoint_id", "")
+                model = settings.get("default_model", "")
+                _fallbacks = settings.get("default_model_fallbacks") or []
         else:
             ep_id = settings.get("default_endpoint_id", "")
             model = settings.get("default_model", "")
@@ -2085,15 +2089,11 @@ def setup_model_routes(model_discovery):
                         # fills it from the fallback endpoint.
                         model = (entry.get("model") or "").strip()
                         break
-            # Last resort: first enabled endpoint owned by THIS user. Do not
-            # include null-owner/shared endpoints here: a brand-new user with
-            # no explicit default should not auto-open a pending chat using an
-            # existing shared/admin endpoint. Shared endpoints remain visible
-            # in the picker and still work when explicitly selected/saved.
+            # Last resort: first enabled endpoint owned by THIS user or shared.
             if not ep:
                 _last_q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
                 if _user and not _is_admin:
-                    _last_q = owner_filter(_last_q, ModelEndpoint, _user, include_shared=False)
+                    _last_q = owner_filter(_last_q, ModelEndpoint, _user, include_shared=True)
                 ep = _last_q.first()
             if not ep:
                 return {"endpoint_id": "", "endpoint_url": "", "model": ""}

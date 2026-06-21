@@ -72,9 +72,10 @@ def _provision_endpoint(token: str, base: str, owner: Optional[str]) -> Dict:
                 name="GitHub Copilot",
                 base_url=base,
                 model_type="llm",
-                owner=owner,
+                owner=None,
             )
             db.add(ep)
+        ep.owner = None
         ep.api_key = token
         ep.is_enabled = True
         ep.supports_tools = supports_tools
