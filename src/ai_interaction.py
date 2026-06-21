@@ -1050,16 +1050,27 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
                 if not choices:
                     return {"error": "No images returned from API (no choices in chat completions)"}
                 
-                content = choices[0].get("message", {}).get("content", "")
-                if not content:
-                    return {"error": "No images returned from API (no content in message)"}
+                message = choices[0].get("message", {})
+                b64_data = None
                 
-                # Check for data URL in markdown or plain text
-                import re
-                data_url_match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
+                # OpenRouter returns Gemini images in an images array
+                images_list = message.get("images", [])
+                if images_list and isinstance(images_list, list) and "image_url" in images_list[0]:
+                    url_val = images_list[0]["image_url"].get("url", "")
+                    import re
+                    match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', url_val)
+                    if match:
+                        b64_data = match.group(1)
                 
-                if data_url_match:
-                    b64_data = data_url_match.group(1)
+                # Fallback to checking content
+                if not b64_data:
+                    content = message.get("content", "") or ""
+                    import re
+                    match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
+                    if match:
+                        b64_data = match.group(1)
+                
+                if b64_data:
                     img_dir = Path(GENERATED_IMAGES_DIR)
                     img_dir.mkdir(parents=True, exist_ok=True)
                     filename = f"{uuid.uuid4().hex[:12]}.png"

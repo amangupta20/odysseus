@@ -128,12 +128,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 choices = data.get("choices", [])
                 if not choices:
                     return [TextContent(type="text", text="Error: No images returned from API")]
-                content = choices[0].get("message", {}).get("content", "")
                 
-                import re
-                data_url_match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
-                if data_url_match:
-                    b64_data = data_url_match.group(1)
+                message = choices[0].get("message", {})
+                b64_data = None
+                
+                images_list = message.get("images", [])
+                if images_list and isinstance(images_list, list) and "image_url" in images_list[0]:
+                    url_val = images_list[0]["image_url"].get("url", "")
+                    import re
+                    match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', url_val)
+                    if match:
+                        b64_data = match.group(1)
+                
+                if not b64_data:
+                    content = message.get("content", "") or ""
+                    import re
+                    match = re.search(r'data:image/[^;]+;base64,([^\s"\']+)', content)
+                    if match:
+                        b64_data = match.group(1)
+                
+                if b64_data:
                     img_dir = Path(GENERATED_IMAGES_DIR)
                     img_dir.mkdir(parents=True, exist_ok=True)
                     filename = f"{uuid.uuid4().hex[:12]}.png"
