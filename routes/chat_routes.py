@@ -45,6 +45,7 @@ from src.tool_policy import build_effective_tool_policy
 logger = logging.getLogger(__name__)
 
 # Track active streams for partial-save safety net
+_active_streams: Dict[str, dict] = {}
 _IMAGE_MODEL_PREFIXES = ("gpt-image", "dall-e", "chatgpt-image", "gemini-", "google/gemini-")
 
 
