@@ -5,7 +5,7 @@ Pins the pure budget computation and the explicit-override detection.
 
 import json
 
-from src.context_budget import compute_input_token_budget, DEFAULT_HARD_MAX
+from src.context_budget import compute_input_token_budget, DEFAULT_HARD_MAX, DEFAULT_BUDGET
 
 
 def test_default_scales_to_context_window():
@@ -30,7 +30,7 @@ def test_explicit_budget_clamped_to_window():
 
 def test_unknown_window_falls_back_to_configured():
     assert compute_input_token_budget(6000, 0, explicit=False) == 6000
-    assert compute_input_token_budget(0, 0, explicit=False) == 6000  # default
+    assert compute_input_token_budget(0, 0, explicit=False) == DEFAULT_BUDGET  # default
 
 
 def test_is_setting_overridden_reads_raw_saved_file(tmp_path, monkeypatch):

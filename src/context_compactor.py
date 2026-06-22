@@ -37,7 +37,7 @@ def _content_as_text(content: Any) -> str:
 
 
 COMPACT_THRESHOLD = 0.85  # Trigger compaction at 85% of context window
-SUMMARY_MAX_TOKENS = 1024
+SUMMARY_MAX_TOKENS = 10240
 SMALL_CONTEXT_LIMIT = 8192  # Models with context <= this get aggressive trimming
 
 # Cursor-style self-summarization prompt — produces structured, dense summaries

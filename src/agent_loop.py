@@ -653,7 +653,7 @@ _ADMIN_SCHEMA_NAMES = frozenset([
     "create_session", "list_sessions", "send_to_session", "pipeline",
     "ask_teacher", "list_models", "search_chats",
 ])
-_TOOL_SELECTION_TIMEOUT_SECONDS = 1.5
+_TOOL_SELECTION_TIMEOUT_SECONDS = 10.0
 
 
 def _is_ollama_openai_compat_url(endpoint_url: str) -> bool:
@@ -2142,7 +2142,7 @@ async def stream_agent_loop(
                 if _retrieval_query:
                     try:
                         _relevant_tools = await asyncio.wait_for(
-                            asyncio.to_thread(tool_idx.get_tools_for_query, _retrieval_query, 8),
+                            asyncio.to_thread(tool_idx.get_tools_for_query, _retrieval_query, 15),
                             timeout=_TOOL_SELECTION_TIMEOUT_SECONDS,
                         )
                         logger.info(f"[tool-rag] Retrieved tools for query: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
