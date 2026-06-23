@@ -181,7 +181,7 @@ services:
 
   diagram_mcp:
     build:
-      context: ../diagram-mcp-server
+      context: https://github.com/amangupta20/diagram-mcp-server.git#master
     restart: unless-stopped
     ports:
       - "127.0.0.1:8001:8000"
