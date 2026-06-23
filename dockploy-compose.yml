@@ -179,6 +179,13 @@ services:
     ports:
       - "${ONLYOFFICE_PORT_BIND:-127.0.0.1:8083}:80"
 
+  diagram_mcp:
+    build:
+      context: ../diagram-mcp-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8000"
+
 volumes:
   searxng-data:
   chromadb-data:
