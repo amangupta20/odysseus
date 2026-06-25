@@ -13,8 +13,8 @@ exactly (clamped to the window). Pure and side-effect free so it is unit-testabl
 # Generous ceiling so long-context models are unblocked without sending a
 # pathologically large prompt every agent turn. Tunable; chosen to fully cover
 # 128K models and give 1M models a large but bounded budget.
-DEFAULT_HARD_MAX = 200_000
-DEFAULT_BUDGET = 6000
+DEFAULT_HARD_MAX = 300_000
+DEFAULT_BUDGET = 96000
 DEFAULT_HEADROOM = 0.85
 
 
@@ -72,4 +72,5 @@ def budget_is_explicit(configured: int, *, default: int = DEFAULT_BUDGET) -> boo
     is unit-testable and can't silently regress to a presence check.
     """
     configured = int(configured or 0)
-    return configured > 0 and configured != default
+    # Treat legacy 6000 as default to avoid capping existing installs
+    return configured > 0 and configured != default and configured != 6000

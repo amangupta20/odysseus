@@ -33,7 +33,7 @@ class TestCompactThreshold:
         assert COMPACT_THRESHOLD == 0.85
 
     def test_summary_max_tokens(self):
-        assert SUMMARY_MAX_TOKENS == 1024
+        assert SUMMARY_MAX_TOKENS == 20480
 
 
 class TestSelfSummaryPrompt:

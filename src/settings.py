@@ -117,7 +117,7 @@ DEFAULT_SETTINGS = {
     # default is treated as auto because the settings-save path materializes
     # defaults, so a persisted 6000 can't be told apart from a deliberate 6000 —
     # to pin a budget near the default, use a nearby value (e.g. 5999).
-    "agent_input_token_budget": 6000,
+    "agent_input_token_budget": 96000,
     # Ceiling on the *auto-derived* input budget; a configurable setting since #1273
     # (the merged #1230 left it a module constant). No effect on an explicit budget
     # — a deliberate value is honoured (#1230). Default matches
@@ -125,7 +125,7 @@ DEFAULT_SETTINGS = {
     # cost-paranoid setups, raise it on premium APIs with very large windows you
     # want to actually use (e.g. 900_000 to fill a 1M-context model). See
     # `compute_input_token_budget`.
-    "agent_input_token_hard_max": 200_000,
+    "agent_input_token_hard_max": 300_000,
     "agent_stream_timeout_seconds": 300,
     # Extra directory roots that read_file / write_file may access, in
     # addition to the built-in project data/ and system temp dirs. Each

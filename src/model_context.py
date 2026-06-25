@@ -103,8 +103,8 @@ def is_local_endpoint(url: str) -> bool:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DEFAULT_CONTEXT = 128000
-REQUEST_TIMEOUT = 5
+DEFAULT_CONTEXT = 200000
+REQUEST_TIMEOUT = 15
 
 # Known context windows for major API models (used as fallback when /models
 # endpoint doesn't report context_length).
@@ -226,6 +226,11 @@ KNOWN_CONTEXT_WINDOWS = {
     'wizard': 32768,
     'openchat': 8192,
     'solar': 32768,
+
+    # --- Generic fallbacks ---
+    'openrouter': 128000,
+    'mimo': 131072,
+    'qwen': 131072,
 }
 
 # ---------------------------------------------------------------------------
@@ -248,10 +253,11 @@ def _get_context_length_cached(endpoint_url: str, model: str) -> Tuple[int, bool
         return _context_cache[cache_key]
 
     ctx, known = _query_context_length(endpoint_url, model)
-    # Only cache non-default values to allow retry on next request.
+    # Only cache if we actually discovered the window or it's not the default fallback.
+    # This prevents transient timeouts from permanently locking the session to a fallback budget.
     # Local endpoints can restart with a different --max-model-len while keeping
     # the same model id, so always re-query them instead of serving stale cache.
-    if not is_local and (ctx != DEFAULT_CONTEXT or configured_kind in ("api", "proxy")):
+    if not is_local and (known or ctx != DEFAULT_CONTEXT):
         _context_cache[cache_key] = (ctx, known)
     logger.info(f"Context length for {model}: {ctx}")
     return ctx, known
