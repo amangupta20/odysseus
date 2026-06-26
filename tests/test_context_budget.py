@@ -29,8 +29,11 @@ def test_explicit_budget_clamped_to_window():
 
 
 def test_unknown_window_falls_back_to_configured():
-    assert compute_input_token_budget(6000, 0, explicit=False) == 6000
+    # If the budget is not explicit, it falls back to DEFAULT_BUDGET (so legacy installs aren't capped at 6000)
+    assert compute_input_token_budget(6000, 0, explicit=False) == DEFAULT_BUDGET
     assert compute_input_token_budget(0, 0, explicit=False) == DEFAULT_BUDGET  # default
+    # If the budget is explicit, it falls back to the configured budget
+    assert compute_input_token_budget(6000, 0, explicit=True) == 6000
 
 
 def test_is_setting_overridden_reads_raw_saved_file(tmp_path, monkeypatch):

@@ -58,6 +58,9 @@ def compute_input_token_budget(
         scaled = int(context_length * headroom)
         return max(1, min(scaled, hard_max))
 
+    if not explicit:
+        return default
+
     return configured if configured > 0 else default
 
 

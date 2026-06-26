@@ -122,6 +122,7 @@ KNOWN_CONTEXT_WINDOWS = {
     'claude-3-opus': 200000,
     'claude-3-sonnet': 200000,
     'claude-3-haiku': 200000,
+    'claude': 200000,
 
     # --- OpenAI ---
     'gpt-5': 400000,
@@ -147,6 +148,7 @@ KNOWN_CONTEXT_WINDOWS = {
     'deepseek-r1': 64000,
     'deepseek-v3': 64000,
     'deepseek-v2': 64000,
+    'deepseek': 64000,
 
     # --- Google ---
     'gemini-2.5-pro': 1048576,
@@ -154,6 +156,7 @@ KNOWN_CONTEXT_WINDOWS = {
     'gemini-2.0-flash': 1048576,
     'gemini-1.5-pro': 1048576,
     'gemini-1.5-flash': 1048576,
+    'gemini': 1048576,
     'gemma-4': 262144,
     'gemma-3': 128000,
     'gemma-2': 8192,
@@ -167,6 +170,7 @@ KNOWN_CONTEXT_WINDOWS = {
     'mixtral': 32000,
     'codestral': 32000,
     'pixtral': 128000,
+    'mistral': 32000,
 
     # --- xAI ---
     'grok-4': 131072,
@@ -179,12 +183,14 @@ KNOWN_CONTEXT_WINDOWS = {
     'llama-3.2': 131072,
     'llama-3.1': 131072,
     'llama-3': 131072,
+    'llama': 131072,
 
     # --- Qwen ---
     'qwen3': 131072,
     'qwen2.5': 131072,
     'qwen2': 32768,
     'qwq': 32768,
+    'qwen': 32768,
 
     # --- Cohere ---
     'command-r-plus': 128000,
