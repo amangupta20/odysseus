@@ -34,6 +34,9 @@ services:
       # Lets the container reach local services on the Docker host, including
       # Ollama at http://host.docker.internal:11434.
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - shared-mcp-network
     environment:
       - GITHUB_PAT=${GITHUB_PAT}
       - ONLYOFFICE_URL=${ONLYOFFICE_URL:-http://onlyoffice:80}
@@ -179,20 +182,6 @@ services:
     ports:
       - "${ONLYOFFICE_PORT_BIND:-127.0.0.1:8083}:80"
 
-  diagram_mcp:
-    build:
-      context: https://github.com/amangupta20/diagram-mcp-server.git#master
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8001:8000"
-
-  geogebra_mcp:
-    build:
-      context: https://github.com/amangupta20/geogebra-mcp-server.git#master
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8002:8000"
-
 volumes:
   searxng-data:
   chromadb-data:
@@ -202,3 +191,7 @@ volumes:
   odysseus-ssh:
   odysseus-huggingface:
   odysseus-local:
+
+networks:
+  shared-mcp-network:
+    external: true
