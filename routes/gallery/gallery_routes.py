@@ -1905,9 +1905,9 @@ def setup_gallery_routes() -> APIRouter:
                 data = resp.json()
                 # Anthropic returns content[0].text, OpenAI returns choices[0].message.content
                 if provider == "anthropic":
-                    content = (data.get("content") or [{}])[0].get("text", "")
+                    content = (data.get("content") or [{}])[0].get("text") or ""
                 else:
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
 
             # Clean up tags
             tags = [t.strip().lower() for t in content.split(",") if t.strip()]
