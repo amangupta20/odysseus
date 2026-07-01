@@ -9,7 +9,7 @@ import threading
 import re
 import os
 from fastapi import HTTPException
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from src.model_context import get_context_length, DEFAULT_CONTEXT
 from urllib.parse import urlparse
 
@@ -1867,6 +1867,73 @@ async def llm_call_async(
                 raise HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}")
             await asyncio.sleep(LLMConfig.RETRY_DELAY)
 
+
+def _sanitize_tool_schema(schema: Any) -> Any:
+    """Recursively clean up schemas, flattening anyOf/oneOf to resolve Vertex/Gemini LiteLLM issues."""
+    if not isinstance(schema, dict):
+        if isinstance(schema, list):
+            return [_sanitize_tool_schema(item) for item in schema]
+        return schema
+
+    # Copy the dictionary to avoid mutating the original
+    schema = dict(schema)
+
+    # 1. Handle anyOf / oneOf
+    for key in ("anyOf", "oneOf"):
+        if key in schema and isinstance(schema[key], list):
+            variants = schema[key]
+            non_null_variants = []
+            for v in variants:
+                if isinstance(v, dict):
+                    if v.get("type") != "null" and v.get("type") is not None:
+                        non_null_variants.append(v)
+                    elif v.get("type") is None and any(k in v for k in ("properties", "items", "anyOf", "oneOf")):
+                        non_null_variants.append(v)
+            
+            if non_null_variants:
+                first_variant = _sanitize_tool_schema(non_null_variants[0])
+                schema.pop(key)
+                schema.update(first_variant)
+            else:
+                schema.pop(key)
+                schema["type"] = "string"
+
+    # 2. Handle type as a list (e.g. ["string", "null"])
+    if "type" in schema and isinstance(schema["type"], list):
+        types = schema["type"]
+        non_null_types = [t for t in types if t != "null"]
+        if non_null_types:
+            schema["type"] = non_null_types[0]
+        else:
+            schema["type"] = "string"
+
+    # 3. Recursively process nested dictionaries
+    for k, v in list(schema.items()):
+        schema[k] = _sanitize_tool_schema(v)
+
+    return schema
+
+
+def _sanitize_tools_for_llm(tools: Optional[List[Dict]]) -> Optional[List[Dict]]:
+    """Clean up JSON schemas in tool payloads before sending to the LLM."""
+    if not tools:
+        return tools
+    
+    sanitized = []
+    for t in tools:
+        if not isinstance(t, dict):
+            sanitized.append(t)
+            continue
+        t_copy = dict(t)
+        if "function" in t_copy and isinstance(t_copy["function"], dict):
+            func_copy = dict(t_copy["function"])
+            if "parameters" in func_copy and isinstance(func_copy["parameters"], dict):
+                func_copy["parameters"] = _sanitize_tool_schema(func_copy["parameters"])
+            t_copy["function"] = func_copy
+        sanitized.append(t_copy)
+    return sanitized
+
+
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
@@ -1880,6 +1947,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - event: error                       — errors
       - data: [DONE]                       — end of stream
     """
+    tools = _sanitize_tools_for_llm(tools)
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
