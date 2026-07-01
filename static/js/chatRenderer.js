@@ -2192,7 +2192,7 @@ export function renderAskUserCard(payload, options) {
 /**
  * Add a message to the chat history.
  */
-export function addMessage(role, content, modelName, metadata) {
+export function addMessage(role, content, modelName, metadata, insertBeforeEl = null) {
   try {
     hideWelcomeScreen();
     const box = document.getElementById('chat-history');
@@ -2267,7 +2267,11 @@ export function addMessage(role, content, modelName, metadata) {
           wrap.appendChild(body);
           wrap.dataset.raw = txt;
           if (metadata?._db_id) wrap.dataset.dbId = metadata._db_id;
-          box.appendChild(wrap);
+          if (insertBeforeEl) {
+            box.insertBefore(wrap, insertBeforeEl);
+          } else {
+            box.appendChild(wrap);
+          }
           lastWrap = wrap;
           if (!firstMsgAi) firstMsgAi = wrap;
           lastMsgAi = wrap;
@@ -2284,7 +2288,11 @@ export function addMessage(role, content, modelName, metadata) {
             threadWrap.className = 'agent-thread';
             // Extend line up if there's a chat bubble above
             if (txt) threadWrap.classList.add('has-top');
-            box.appendChild(threadWrap);
+            if (insertBeforeEl) {
+              box.insertBefore(threadWrap, insertBeforeEl);
+            } else {
+              box.appendChild(threadWrap);
+            }
           }
           for (const ev of roundTools) {
             if (ev.ask_user) pendingAskUser = ev.ask_user;
@@ -2334,7 +2342,12 @@ export function addMessage(role, content, modelName, metadata) {
 
           for (const ev of roundTools) {
             if (ev.image_url) {
-              box.appendChild(buildImageBubble(ev.image_url, ev.image_prompt, ev.image_model, ev.image_size, ev.image_quality, ev.image_id));
+              const imgBubble = buildImageBubble(ev.image_url, ev.image_prompt, ev.image_model, ev.image_size, ev.image_quality, ev.image_id);
+              if (insertBeforeEl) {
+                box.insertBefore(imgBubble, insertBeforeEl);
+              } else {
+                box.appendChild(imgBubble);
+              }
             }
           }
         }
@@ -2660,7 +2673,11 @@ export function addMessage(role, content, modelName, metadata) {
       wrap.appendChild(createUserMsgFooter(wrap));
     }
 
-    box.appendChild(wrap);
+    if (insertBeforeEl) {
+      box.insertBefore(wrap, insertBeforeEl);
+    } else {
+      box.appendChild(wrap);
+    }
 
     // TTS is now part of the msg-actions system
     if (role === 'assistant' && markdownModule.renderMermaid) {

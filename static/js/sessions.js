@@ -110,7 +110,7 @@ function _historyUrl(id, { limit = null, offset = null } = {}) {
   return url.toString();
 }
 
-function _renderHistoryMessage(msg, modelName) {
+function _renderHistoryMessage(msg, modelName, insertBeforeEl = null) {
   const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
   let displayContent;
   if (typeof msg.content === 'string') {
@@ -137,54 +137,11 @@ function _renderHistoryMessage(msg, modelName) {
       displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
     }
   }
-  const box = document.getElementById('chat-history');
-  if (!box) return null;
-  if (chatRenderer.hideWelcomeScreen) chatRenderer.hideWelcomeScreen();
 
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + (msg.role === 'user' ? 'msg-user' : 'msg-ai');
-  wrap.dataset.raw = displayContent;
-  if (meta?._db_id) wrap.dataset.dbId = meta._db_id;
-
-  const roleEl = document.createElement('div');
-  roleEl.className = 'role';
-  if (msg.role === 'user') {
-    roleEl.textContent = 'You';
-  } else {
-    const pair = chatRenderer.replyModelPair ? chatRenderer.replyModelPair(modelName, meta) : {};
-    const resolved = pair.actualModel || pair.requestedModel || modelName;
-    roleEl.textContent = chatRenderer.modelRouteLabel
-      ? chatRenderer.modelRouteLabel(pair.requestedModel, resolved)
-      : (resolved || 'Odysseus');
-    if (chatRenderer.applyModelColor) chatRenderer.applyModelColor(roleEl, resolved);
+  if (chatRenderer.addMessage) {
+    return chatRenderer.addMessage(msg.role, displayContent, modelName, meta, insertBeforeEl);
   }
-  const timestamp = meta?.timestamp;
-  if (timestamp) {
-    const ts = document.createElement('span');
-    ts.className = 'msg-time';
-    try {
-      ts.textContent = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      ts.textContent = '';
-    }
-    roleEl.appendChild(ts);
-  }
-
-  const body = document.createElement('div');
-  body.className = 'body';
-  body.innerHTML = markdownModule.processWithThinking(
-    markdownModule.squashOutsideCode(markdownModule.renderContent(displayContent || ''))
-  );
-  if (msg.role === 'user' && Array.isArray(meta?.attachments) && meta.attachments.length) {
-    if (chatRenderer.buildAttachCards) {
-      body.appendChild(chatRenderer.buildAttachCards(meta.attachments));
-    }
-  }
-
-  wrap.appendChild(roleEl);
-  wrap.appendChild(body);
-  box.appendChild(wrap);
-  return wrap;
+  return null;
 }
 
 function _clearHistoryPager() {
@@ -232,11 +189,8 @@ function _installHistoryPager(id, pageInfo, modelName) {
       const newEls = [];
       for (const msg of data.history || []) {
         if (msg.role !== 'user' && msg.role !== 'assistant') continue;
-        const el = _renderHistoryMessage(msg, _historyPager.modelName);
+        const el = _renderHistoryMessage(msg, _historyPager.modelName, anchor);
         if (el) newEls.push(el);
-      }
-      for (const el of newEls) {
-        box.insertBefore(el, anchor || box.firstChild);
       }
       _historyPager.offset = Number(data.offset || nextOffset);
       _historyPager.done = !data.has_more_before;
