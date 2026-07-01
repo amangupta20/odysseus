@@ -119,7 +119,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net{oo_csp}; "
                 f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net{oo_csp}; "
                 f"font-src 'self' https://cdn.jsdelivr.net{oo_csp}; "
-                f"img-src 'self' data: blob:{oo_csp}; "
+                f"img-src 'self' data: blob: https:{oo_csp}; "
                 "media-src 'self' blob:; "
                 f"connect-src 'self'{oo_csp}; "
                 f"frame-src 'self'{oo_csp}; "

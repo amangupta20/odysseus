@@ -36,6 +36,11 @@ def test_unknown_window_falls_back_to_configured():
     assert compute_input_token_budget(6000, 0, explicit=True) == 6000
 
 
+def test_invalid_numeric_inputs_fall_back_cleanly():
+    assert compute_input_token_budget("bad", "also bad", explicit=False) == DEFAULT_BUDGET
+    assert compute_input_token_budget("bad", 128000, explicit=True) == int(128000 * 0.85)
+
+
 def test_is_setting_overridden_reads_raw_saved_file(tmp_path, monkeypatch):
     import src.settings as settings
 
