@@ -3,7 +3,6 @@
 
 import Storage from './storage.js';
 import uiModule, { autoResize, styledPrompt } from './ui.js';
-import markdownModule from './markdown.js';
 import chatRenderer from './chatRenderer.js';
 import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js';
@@ -110,7 +109,30 @@ function _historyUrl(id, { limit = null, offset = null } = {}) {
   return url.toString();
 }
 
-function _renderHistoryMessage(msg, modelName, insertBeforeEl = null) {
+function _addHistoryMessageWithFullRenderer(role, content, modelName, meta) {
+  const box = document.getElementById('chat-history');
+  if (!box) return [];
+  const marker = document.createComment('history-message');
+  box.appendChild(marker);
+  let rendered = null;
+  try {
+    rendered = chatRenderer.addMessage(role, content, modelName, meta);
+  } catch (e) {
+    marker.remove();
+    throw e;
+  }
+  const nodes = [];
+  let node = marker.nextSibling;
+  while (node) {
+    const next = node.nextSibling;
+    nodes.push(node);
+    node = next;
+  }
+  marker.remove();
+  return nodes.length ? nodes : (rendered ? [rendered] : []);
+}
+
+function _renderHistoryMessage(msg, modelName) {
   const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
   let displayContent;
   if (typeof msg.content === 'string') {
@@ -137,11 +159,7 @@ function _renderHistoryMessage(msg, modelName, insertBeforeEl = null) {
       displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
     }
   }
-
-  if (chatRenderer.addMessage) {
-    return chatRenderer.addMessage(msg.role, displayContent, modelName, meta, insertBeforeEl);
-  }
-  return null;
+  return _addHistoryMessageWithFullRenderer(msg.role, displayContent, modelName, meta);
 }
 
 function _clearHistoryPager() {
@@ -189,8 +207,8 @@ function _installHistoryPager(id, pageInfo, modelName) {
       const newEls = [];
       for (const msg of data.history || []) {
         if (msg.role !== 'user' && msg.role !== 'assistant') continue;
-        const el = _renderHistoryMessage(msg, _historyPager.modelName, anchor);
-        if (el) newEls.push(el);
+        const els = _renderHistoryMessage(msg, _historyPager.modelName);
+        if (Array.isArray(els)) newEls.push(...els);
       }
       _historyPager.offset = Number(data.offset || nextOffset);
       _historyPager.done = !data.has_more_before;
@@ -1615,7 +1633,10 @@ export async function loadSessions() {
     // most recently appended a message.
     const _isTransient = (s) => !!s && (s.folder === 'Assistant' || s.folder === 'Tasks');
     const _realSessions = activeSessions.filter(s => !_isTransient(s));
-    const hashId = window.location.hash.replace('#', '');
+    let hashId = window.location.hash.replace('#', '');
+    if (/^(document|note|image|email|event|task|skill|research)-/.test(hashId) || /^open=notes&note=/.test(hashId)) {
+      hashId = '';
+    }
     let savedId = Storage.get('lastSessionId');
     // If the persisted lastSessionId points to a transient session (legacy
     // state from before the persistence-guard was added), drop it.
@@ -1734,7 +1755,7 @@ export async function loadSessions() {
   }
 }
 
-export async function selectSession(id, { keepSidebar = false, showLoading = true } = {}) {
+export async function selectSession(id, { keepSidebar = false, showLoading = true, immediateLoading = false } = {}) {
   // Exit compare mode cleanly if active
   if (window.compareModule && window.compareModule.isActive()) {
     window.compareModule.deactivate(true);
@@ -1852,7 +1873,7 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
     let loadingPaintReady = Promise.resolve();
     if (!isOC) {
       if (showLoading && chatHistory && prevSessionId !== id) {
-        const loadingDelayMs = window.innerWidth <= 768 ? 900 : 500;
+        const loadingDelayMs = immediateLoading ? 0 : (window.innerWidth <= 768 ? 900 : 500);
         loadingTimer = setTimeout(() => {
           if (navToken !== _sessionNavToken || currentSessionId !== id) return;
           _paintSessionLoading(chatHistory, 'Loading chat');
@@ -1944,8 +1965,13 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
       }
     } else {
       if (window.chatModule && window.chatModule.showWelcomeScreen) window.chatModule.showWelcomeScreen();
-      // Don't highlight empty sessions — feels like nothing is selected
-      document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
+      // Don't highlight ordinary empty sessions — feels like nothing is
+      // selected. Keep document/email-scoped sessions highlighted though: a
+      // new email/reply chat starts empty but immediately owns an email doc.
+      const isDocScopedEmptySession = !!(meta && (meta.has_documents || /^Email:|^New Email$/i.test(meta.name || '')));
+      if (!isDocScopedEmptySession) {
+        document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
+      }
     }
     uiModule.scrollHistoryInstant();
     if (!isOC && msgHistory.length) {
@@ -2032,9 +2058,16 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
     }
     uiModule.showError('Failed to load session: ' + error.message);
   } finally {
-    // Ensure memories are loaded after session selection
+    // Memory warmup must not block chat switching. The memories panel can load
+    // on demand; this is only a delayed cache refresh when the foreground chat
+    // is idle.
     if (window.memoryModule && window.memoryModule.loadMemories) {
-      await window.memoryModule.loadMemories();
+      setTimeout(() => {
+        const busy = !!window.__odysseusChatBusy
+          || Date.now() < (window.__odysseusChatBusyUntil || 0)
+          || !!document.querySelector('.send-btn[data-mode="streaming"], .send-btn.send-pending');
+        if (!busy) window.memoryModule.loadMemories().catch(() => {});
+      }, 2500);
     }
     // Auto-focus message input (unless session list has keyboard focus).
     // Skip on mobile — focusing the textarea pops up the on-screen keyboard,
@@ -2162,10 +2195,11 @@ export async function materializePendingSession() {
   Storage.set('lastSessionId', payload.id);
   history.replaceState(null, '', '#' + payload.id);
 
-  // Reload sidebar to show the new session — await it so the session
-  // is fully registered before the caller proceeds (prevents race conditions)
+  // Reload the sidebar in the background. Awaiting this used to block the first
+  // prompt in a new/pending chat behind startup fetches and slow /api/sessions
+  // calls, so the user's message could sit for 20s+ before streaming began.
   _suppressNextSessionLoading = true;
-  await loadSessions().catch(() => {});
+  loadSessions().catch(() => {});
   return true;
 }
 
@@ -2299,7 +2333,7 @@ export function initDragSort() {
 // session navigation (which would reset the active chat).
 window.addEventListener('hashchange', () => {
   const hashId = window.location.hash.replace('#', '');
-  if (/^(document|note|image|email|event|task|skill|research)-/.test(hashId)) return;
+  if (/^(document|note|image|email|event|task|skill|research)-/.test(hashId) || /^open=notes&note=/.test(hashId)) return;
   if (hashId && hashId !== currentSessionId) {
     const target = sessions.find(s => s.id === hashId && !s.archived);
     if (target) selectSession(hashId);
